@@ -143,6 +143,20 @@ critical path fix described below.
     normal use beyond a capped 4-second check on first launch of a
     session. It never auto-downloads or auto-installs anything.
 
+11. **Dedicated Edit/Delete buttons on Members and Books** (requested).
+    Both pages previously used an inline-editable table (`st.data_editor`) -
+    click any cell to edit it, tick a row's checkbox + press the trash icon
+    + click "Save Changes" to delete. That's replaced with a plain row list
+    where each employee/book gets its own **✏️ Edit** and **🗑️ Delete**
+    button. Edit opens a modal (`st.dialog`) pre-filled with that row's
+    current values; Delete opens a confirmation modal naming exactly what
+    will be removed before anything happens. Same underlying functions as
+    before (`update_employee`/`delete_employee`/`update_book`/`delete_book`
+    - unchanged), same validation (can't delete a book that's currently
+    issued, can't delete an employee with an outstanding loan, duplicate-ID
+    checks), same Excel re-sync after every change. The "Add Employee" /
+    "Add New Book" forms above the list are untouched.
+
 Everything else - page structure, navigation labels, form fields,
 validation rules, and all database/Excel logic - is unchanged from the
 original app.
@@ -265,6 +279,10 @@ see limitation below):
 | Update check against the real repo before any release existed (expects a graceful no-op) | ✅ Pass (`404 Not Found` from GitHub's API, caught and treated as "no update," no banner shown, no crash) |
 | Update check runs without error inside the packaged app (`version.py` bundled correctly as a PyInstaller data file, `urllib` works from a frozen exe) | ✅ Pass (clean logs, HTTP 200) |
 | Git repo initialized, `.gitignore` excludes `.venv`/`build`/`dist`/installer binary, pushed to GitHub, tagged `v1.0.0` | ✅ Pass |
+| Members/Books row-based Edit/Delete buttons render (headless, via Streamlit's own `AppTest` framework - not screen automation this time) | ✅ Pass - button count matches real row count exactly (8 employees → 8 edit + 8 delete; 6 books → 6 edit + 6 delete) |
+| Edit dialogs pre-fill with the correct row's real data | ✅ Pass (verified exact values: e.g. employee E006/Aleena, book B001/"1984"/George Orwell/Fiction) |
+| Delete dialogs show the correct name/ID in the warning before confirming | ✅ Pass (verified exact wording for both an employee and a book) |
+| Clicking Save/Delete *inside* the dialog and having it persist | Not verified via automation - `AppTest` isolated this as a limitation of testing `st.dialog` specifically (confirmed by testing the identical set-value-then-click pattern against a plain, non-dialog form, which worked and correctly wrote to the database), not a code issue. The dialogs call the same pre-existing, already-proven `update_*`/`delete_*` functions with argument order verified by direct code review. Worth one manual click-through. |
 
 **Known limitation:** all testing above ran on this development machine, not
 a separate clean Windows machine with no dev tools installed. I did not

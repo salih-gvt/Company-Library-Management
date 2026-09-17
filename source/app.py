@@ -664,10 +664,8 @@ if "excel_imported" not in st.session_state:
     st.session_state.excel_imported = True
 
 
-# Version counters used to force st.data_editor widgets to reload
-# fresh data instead of showing a stale cached snapshot whenever the
-# underlying books/employees data changes from elsewhere in the app
-# (e.g. issuing/returning a book).
+# Version counters, bumped by every add/edit/delete/issue/return so
+# other parts of the app can tell books/employees data just changed.
 if "books_version" not in st.session_state:
     st.session_state.books_version = 0
 
@@ -1087,6 +1085,150 @@ def delete_book(book_id):
         st.toast(f"Synced to Excel: {excel_path}", icon="✅")
     except Exception as e:
         st.warning(f"Book deleted, but couldn't sync to Excel: {e}")
+
+
+# =========================================================
+# EDIT / DELETE DIALOGS (Members & Books)
+# =========================================================
+
+@st.dialog("Edit Employee")
+def edit_employee_dialog(original_employee_id, name, email, department):
+
+    new_employee_id = st.text_input("Employee ID", value=original_employee_id)
+    new_name = st.text_input("Employee Name", value=name)
+    new_email = st.text_input("Email", value=email)
+    new_department = st.text_input("Department", value=department or "")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("Cancel", use_container_width=True, key="cancel_edit_employee"):
+            st.rerun()
+
+    with col2:
+        if st.button(
+            "💾 Save Changes",
+            type="primary",
+            use_container_width=True,
+            key="save_edit_employee"
+        ):
+            if not new_employee_id.strip() or not new_name.strip() or not new_email.strip():
+                st.error("Employee ID, Name and Email cannot be empty.")
+            else:
+                try:
+                    update_employee(
+                        original_employee_id,
+                        new_employee_id.strip(),
+                        new_name.strip(),
+                        new_email.strip(),
+                        new_department.strip()
+                    )
+                    st.success("Employee updated successfully.")
+                    st.rerun()
+                except sqlite3.IntegrityError:
+                    st.error(f"Employee ID '{new_employee_id}' is already used by another employee.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+
+@st.dialog("Delete Employee")
+def delete_employee_dialog(employee_id, name):
+
+    st.warning(
+        f"Delete employee **{name}** ({employee_id})? This cannot be undone."
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("Cancel", use_container_width=True, key="cancel_delete_employee"):
+            st.rerun()
+
+    with col2:
+        if st.button(
+            "🗑️ Delete",
+            type="primary",
+            use_container_width=True,
+            key="confirm_delete_employee"
+        ):
+            try:
+                delete_employee(employee_id)
+                st.success("Employee deleted successfully.")
+            except ValueError as e:
+                st.error(str(e))
+            except Exception as e:
+                st.error(f"Error: {e}")
+            st.rerun()
+
+
+@st.dialog("Edit Book")
+def edit_book_dialog(original_book_id, title, author, category):
+
+    new_book_id = st.text_input("Book ID", value=original_book_id)
+    new_title = st.text_input("Book Title", value=title)
+    new_author = st.text_input("Author", value=author or "")
+    new_category = st.text_input("Category", value=category or "")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("Cancel", use_container_width=True, key="cancel_edit_book"):
+            st.rerun()
+
+    with col2:
+        if st.button(
+            "💾 Save Changes",
+            type="primary",
+            use_container_width=True,
+            key="save_edit_book"
+        ):
+            if not new_book_id.strip() or not new_title.strip():
+                st.error("Book ID and Title cannot be empty.")
+            else:
+                try:
+                    update_book(
+                        original_book_id,
+                        new_book_id.strip(),
+                        new_title.strip(),
+                        new_author.strip(),
+                        new_category.strip()
+                    )
+                    st.success("Book updated successfully.")
+                    st.rerun()
+                except sqlite3.IntegrityError:
+                    st.error(f"Book ID '{new_book_id}' is already used by another book.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+
+@st.dialog("Delete Book")
+def delete_book_dialog(book_id, title):
+
+    st.warning(
+        f"Delete book **{title}** ({book_id})? This cannot be undone."
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("Cancel", use_container_width=True, key="cancel_delete_book"):
+            st.rerun()
+
+    with col2:
+        if st.button(
+            "🗑️ Delete",
+            type="primary",
+            use_container_width=True,
+            key="confirm_delete_book"
+        ):
+            try:
+                delete_book(book_id)
+                st.success("Book deleted successfully.")
+            except ValueError as e:
+                st.error(str(e))
+            except Exception as e:
+                st.error(f"Error: {e}")
+            st.rerun()
 
 
 def get_all_issue_records():
@@ -1829,7 +1971,7 @@ elif page == "👥 Members":
 
 
     # -----------------------------------------------------
-    # EMPLOYEE DIRECTORY (inline editable + deletable rows)
+    # EMPLOYEE DIRECTORY (Edit / Delete buttons per row)
     # -----------------------------------------------------
 
     members = get_all_members()
@@ -1855,163 +1997,44 @@ elif page == "👥 Members":
                 or search_lower in str(member[3]).lower()
             ]
 
-        data = []
+        if filtered_members:
 
-        for member in filtered_members:
+            header_cols = st.columns([2, 2, 3, 2, 1, 1])
 
-            data.append([
-                member[0],
-                member[1],
-                member[2],
-                member[3]
-            ])
+            for header_col, header_label in zip(
+                header_cols,
+                ["Employee ID", "Name", "Email", "Department", "", ""]
+            ):
+                header_col.markdown(f"**{header_label}**")
 
-        df = pd.DataFrame(
-            data,
-            columns=[
-                "Employee ID",
-                "Name",
-                "Email",
-                "Department"
-            ]
-        )
+            for employee_id, name, email, department in filtered_members:
 
-        st.caption(
-            "Select a row's checkbox and press the 🗑️ icon (or Delete key) "
-            "to remove it — then click Save Changes."
-        )
+                row_cols = st.columns([2, 2, 3, 2, 1, 1])
 
-        edited_df = st.data_editor(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            num_rows="dynamic",
-            key=f"employee_directory_editor_{st.session_state.employees_version}"
-        )
+                row_cols[0].write(employee_id)
+                row_cols[1].write(name)
+                row_cols[2].write(email)
+                row_cols[3].write(department)
 
-        if st.button(
-            "💾 Save Changes",
-            use_container_width=True,
-            key="save_employee_directory"
-        ):
+                if row_cols[4].button(
+                    "✏️",
+                    key=f"edit_employee_{employee_id}",
+                    help="Edit this employee",
+                    use_container_width=True
+                ):
+                    edit_employee_dialog(employee_id, name, email, department)
 
-            errors = []
+                if row_cols[5].button(
+                    "🗑️",
+                    key=f"delete_employee_{employee_id}",
+                    help="Delete this employee",
+                    use_container_width=True
+                ):
+                    delete_employee_dialog(employee_id, name)
 
-            original_ids = set(df["Employee ID"])
-            edited_ids = set(edited_df["Employee ID"])
+        else:
 
-            # ---- deleted rows ----
-            for _, original_row in df.iterrows():
-
-                if original_row["Employee ID"] not in edited_ids:
-
-                    try:
-
-                        delete_employee(original_row["Employee ID"])
-
-                    except ValueError as e:
-
-                        errors.append(str(e))
-
-                    except Exception as e:
-
-                        errors.append(f"Error deleting row: {e}")
-
-            # ---- new rows added via the editor's "+" row ----
-            for _, edited_row in edited_df.iterrows():
-
-                if edited_row["Employee ID"] in original_ids:
-                    continue
-
-                new_employee_id = str(edited_row["Employee ID"]).strip()
-                new_name = str(edited_row["Name"]).strip()
-                new_email = str(edited_row["Email"]).strip()
-                new_department = str(edited_row["Department"]).strip()
-
-                if not new_employee_id and not new_name and not new_email:
-                    # blank placeholder row - ignore
-                    continue
-
-                if not new_employee_id or not new_name or not new_email:
-                    errors.append(
-                        "New row: Employee ID, Name and Email cannot be empty."
-                    )
-                    continue
-
-                try:
-
-                    add_employee(
-                        new_employee_id,
-                        new_name,
-                        new_email,
-                        new_department
-                    )
-
-                except sqlite3.IntegrityError:
-
-                    errors.append(
-                        f"Employee ID '{new_employee_id}' already exists."
-                    )
-
-                except Exception as e:
-
-                    errors.append(f"Error adding row: {e}")
-
-            # ---- edited existing rows ----
-            for _, original_row in df.iterrows():
-
-                if original_row["Employee ID"] not in edited_ids:
-                    continue
-
-                edited_row = edited_df[
-                    edited_df["Employee ID"] == original_row["Employee ID"]
-                ].iloc[0]
-
-                if original_row.equals(edited_row):
-                    continue
-
-                new_employee_id = str(edited_row["Employee ID"]).strip()
-                new_name = str(edited_row["Name"]).strip()
-                new_email = str(edited_row["Email"]).strip()
-                new_department = str(edited_row["Department"]).strip()
-
-                if not new_employee_id or not new_name or not new_email:
-                    errors.append(
-                        f"Row for '{original_row['Name']}': "
-                        "Employee ID, Name and Email cannot be empty."
-                    )
-                    continue
-
-                try:
-
-                    update_employee(
-                        original_row["Employee ID"],
-                        new_employee_id,
-                        new_name,
-                        new_email,
-                        new_department
-                    )
-
-                except sqlite3.IntegrityError:
-
-                    errors.append(
-                        f"Employee ID '{new_employee_id}' is already "
-                        "used by another employee."
-                    )
-
-                except Exception as e:
-
-                    errors.append(f"Error updating row: {e}")
-
-            if errors:
-
-                for error_message in errors:
-                    st.error(error_message)
-
-            else:
-
-                st.success("Changes saved successfully.")
-                st.rerun()
+            st.info("No employees match your search.")
 
     else:
 
@@ -2161,7 +2184,7 @@ elif page == "📚 Books":
 
 
     # -----------------------------------------------------
-    # BOOK CATALOGUE (inline editable + deletable rows)
+    # BOOK CATALOGUE (Edit / Delete buttons per row)
     # -----------------------------------------------------
 
     books = get_all_books()
@@ -2188,185 +2211,55 @@ elif page == "📚 Books":
                 or search_lower in str(book[3]).lower()
             ]
 
-        data = []
+        if filtered_books:
 
-        for book in filtered_books:
+            column_widths = [1.3, 2, 1.6, 1.3, 1, 1, 0.7, 0.7]
 
-            status = (
-                "Available"
-                if book[4] == 1
-                else "Issued"
-            )
+            header_cols = st.columns(column_widths)
 
-            data.append([
-                book[0],
-                book[1],
-                book[2],
-                book[3],
-                status,
-                book[5]
-            ])
+            for header_col, header_label in zip(
+                header_cols,
+                ["Book ID", "Title", "Author", "Category", "Status", "Condition", "", ""]
+            ):
+                header_col.markdown(f"**{header_label}**")
 
-        df = pd.DataFrame(
-            data,
-            columns=[
-                "Book ID",
-                "Title",
-                "Author",
-                "Category",
-                "Status",
-                "Condition"
-            ]
-        )
+            for book_id, title, author, category, available, condition in filtered_books:
 
-        st.caption(
-            "Select a row's checkbox and press the 🗑️ icon (or Delete key) "
-            "to remove it — then click Save Changes."
-        )
+                status = "Available" if available == 1 else "Issued"
 
-        edited_df = st.data_editor(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            num_rows="dynamic",
-            key=f"book_catalogue_editor_{st.session_state.books_version}",
-            column_config={
-                "Status": st.column_config.TextColumn(
-                    "Status",
-                    disabled=True,
-                    help="Managed automatically via Issue Book / Return Book"
-                ),
-                "Condition": st.column_config.TextColumn(
-                    "Condition",
-                    disabled=True,
-                    help="Managed automatically via Return Book"
-                )
-            }
-        )
+                row_cols = st.columns(column_widths)
 
-        if st.button(
-            "💾 Save Changes",
-            use_container_width=True,
-            key="save_book_catalogue"
-        ):
+                row_cols[0].write(book_id)
+                row_cols[1].write(title)
+                row_cols[2].write(author)
+                row_cols[3].write(category)
 
-            errors = []
+                if status == "Available":
+                    row_cols[4].markdown(f'<span class="status-available">{status}</span>', unsafe_allow_html=True)
+                else:
+                    row_cols[4].markdown(f'<span class="status-issued">{status}</span>', unsafe_allow_html=True)
 
-            original_ids = set(df["Book ID"])
-            edited_ids = set(edited_df["Book ID"])
+                row_cols[5].write(condition)
 
-            # ---- deleted rows ----
-            for _, original_row in df.iterrows():
+                if row_cols[6].button(
+                    "✏️",
+                    key=f"edit_book_{book_id}",
+                    help="Edit this book",
+                    use_container_width=True
+                ):
+                    edit_book_dialog(book_id, title, author, category)
 
-                if original_row["Book ID"] not in edited_ids:
+                if row_cols[7].button(
+                    "🗑️",
+                    key=f"delete_book_{book_id}",
+                    help="Delete this book",
+                    use_container_width=True
+                ):
+                    delete_book_dialog(book_id, title)
 
-                    try:
+        else:
 
-                        delete_book(original_row["Book ID"])
-
-                    except ValueError as e:
-
-                        errors.append(str(e))
-
-                    except Exception as e:
-
-                        errors.append(f"Error deleting row: {e}")
-
-            # ---- new rows added via the editor's "+" row ----
-            for _, edited_row in edited_df.iterrows():
-
-                if edited_row["Book ID"] in original_ids:
-                    continue
-
-                new_book_id = str(edited_row["Book ID"]).strip()
-                new_title = str(edited_row["Title"]).strip()
-                new_author = str(edited_row["Author"]).strip()
-                new_category = str(edited_row["Category"]).strip()
-
-                if not new_book_id and not new_title:
-                    # blank placeholder row - ignore
-                    continue
-
-                if not new_book_id or not new_title:
-                    errors.append(
-                        "New row: Book ID and Title cannot be empty."
-                    )
-                    continue
-
-                try:
-
-                    add_book(
-                        new_book_id,
-                        new_title,
-                        new_author,
-                        new_category
-                    )
-
-                except sqlite3.IntegrityError:
-
-                    errors.append(
-                        f"Book ID '{new_book_id}' already exists."
-                    )
-
-                except Exception as e:
-
-                    errors.append(f"Error adding row: {e}")
-
-            # ---- edited existing rows ----
-            for _, original_row in df.iterrows():
-
-                if original_row["Book ID"] not in edited_ids:
-                    continue
-
-                edited_row = edited_df[
-                    edited_df["Book ID"] == original_row["Book ID"]
-                ].iloc[0]
-
-                if original_row.equals(edited_row):
-                    continue
-
-                new_book_id = str(edited_row["Book ID"]).strip()
-                new_title = str(edited_row["Title"]).strip()
-                new_author = str(edited_row["Author"]).strip()
-                new_category = str(edited_row["Category"]).strip()
-
-                if not new_book_id or not new_title:
-                    errors.append(
-                        f"Row for '{original_row['Title']}': "
-                        "Book ID and Title cannot be empty."
-                    )
-                    continue
-
-                try:
-
-                    update_book(
-                        original_row["Book ID"],
-                        new_book_id,
-                        new_title,
-                        new_author,
-                        new_category
-                    )
-
-                except sqlite3.IntegrityError:
-
-                    errors.append(
-                        f"Book ID '{new_book_id}' is already "
-                        "used by another book."
-                    )
-
-                except Exception as e:
-
-                    errors.append(f"Error updating row: {e}")
-
-            if errors:
-
-                for error_message in errors:
-                    st.error(error_message)
-
-            else:
-
-                st.success("Changes saved successfully.")
-                st.rerun()
+            st.info("No books match your search.")
 
     else:
 
