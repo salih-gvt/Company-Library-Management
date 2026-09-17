@@ -131,6 +131,18 @@ critical path fix described below.
      `%LocalAppData%\CompanyLibraryManagement\restore_safety_backups\`.
    - Entirely local/offline - no network calls, no cloud storage.
 
+10. **Version tracking + update check.** `source/version.py` holds
+    `APP_VERSION` ("1.0.0") and the GitHub repo this app checks
+    (`salih-gvt/Company-Library-Management`). Once per session (not on
+    every rerun), the app queries that repo's latest GitHub Release via
+    `https://api.github.com/repos/<repo>/releases/latest` and, if its tag
+    is newer than `APP_VERSION`, shows a small info banner at the top of
+    every page: "Update available: vX.Y.Z — see what's new" linking to the
+    release. Any failure (offline, GitHub unreachable, no releases yet,
+    rate-limited) is swallowed silently - it can never block or slow down
+    normal use beyond a capped 4-second check on first launch of a
+    session. It never auto-downloads or auto-installs anything.
+
 Everything else - page structure, navigation labels, form fields,
 validation rules, and all database/Excel logic - is unchanged from the
 original app.
@@ -200,8 +212,22 @@ installer elevated.
 
 ## Remaining external requirements
 
-None. The installer is fully self-contained — no Python, Node, or any SDK
-needs to be present on the target machine.
+None for day-to-day use — the installer is fully self-contained (no Python,
+Node, or any SDK needed on the target machine) and the app works entirely
+offline. Internet access is used for exactly one optional thing: the
+once-per-session update check against GitHub, which fails silently if
+unavailable.
+
+## Source control & releases
+
+The source is at <https://github.com/salih-gvt/Company-Library-Management>.
+`.venv/`, `build/`, `dist/`, and the compiled installer are git-ignored -
+only source, packaging config, and docs are committed. See
+[README.md](README.md)'s "Releasing a new version" section for the exact
+steps to cut a release; the app's update check (above) depends on that
+process being followed - specifically, on an actual GitHub **Release**
+existing (not just a git tag), since that's what the `releases/latest` API
+looks at.
 
 ## Test report
 
@@ -235,6 +261,10 @@ see limitation below):
 | Restore takes an automatic timestamped safety copy of the database before touching it | ✅ Pass (`restore_safety_backups\pre_restore_<timestamp>.db` confirmed created) |
 | Backup/Restore UI on the Settings page (`st.dialog` confirmation, native file dialogs, `st.file_uploader` dev fallback) | Not click-through verified this round - see limitation below; code follows the same widget/layout patterns already proven elsewhere in this app, and the file compiles cleanly with no import errors in either dev or packaged runs |
 | Packaged app still starts and serves the Dashboard correctly with the new code added | ✅ Pass (confirmed via HTTP 200 + clean logs, both before and after this feature) |
+| Version comparison logic (`v1.0.0` vs `1.2.3` vs `v1.10.0` vs `v1.9.0`, etc.) | ✅ Pass (tested directly) |
+| Update check against the real repo before any release existed (expects a graceful no-op) | ✅ Pass (`404 Not Found` from GitHub's API, caught and treated as "no update," no banner shown, no crash) |
+| Update check runs without error inside the packaged app (`version.py` bundled correctly as a PyInstaller data file, `urllib` works from a frozen exe) | ✅ Pass (clean logs, HTTP 200) |
+| Git repo initialized, `.gitignore` excludes `.venv`/`build`/`dist`/installer binary, pushed to GitHub, tagged `v1.0.0` | ✅ Pass |
 
 **Known limitation:** all testing above ran on this development machine, not
 a separate clean Windows machine with no dev tools installed. I did not
