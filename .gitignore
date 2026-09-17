@@ -1,0 +1,18 @@
+# Build environment and artifacts - reproducible from source via
+# README-PRODUCTION.md, not meant to live in version control.
+.venv/
+build/
+dist/
+
+# The compiled installer is a large binary that changes every build;
+# publish it as a GitHub Release asset instead of committing it.
+installer/*.exe
+
+# Python
+__pycache__/
+*.pyc
+
+# Local scratch/test files
+*.png
+*.zip
+*.db
