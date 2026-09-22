@@ -20,6 +20,7 @@ from database import (
     DATABASE_NAME
 )
 from version import APP_VERSION, GITHUB_REPO
+import email_reminders
 
 
 # =========================================================
@@ -671,6 +672,32 @@ if "books_version" not in st.session_state:
 
 if "employees_version" not in st.session_state:
     st.session_state.employees_version = 0
+
+
+# Reminder emails: checked once per session (not on every rerun/click),
+# same reasoning as the Excel import above. A no-op if the feature
+# isn't enabled/configured yet (see email_reminders.check_and_send_reminders).
+if "reminders_checked" not in st.session_state:
+
+    try:
+        _reminder_result = email_reminders.check_and_send_reminders()
+
+        if _reminder_result["sent"] > 0:
+            st.toast(
+                f"📧 Sent {_reminder_result['sent']} reminder email(s).",
+                icon="📧"
+            )
+
+        if _reminder_result["errors"]:
+            st.warning(
+                "Some reminder emails could not be sent: "
+                + "; ".join(_reminder_result["errors"][:3])
+            )
+
+    except Exception:
+        pass  # reminder emails are best-effort, never block the app
+
+    st.session_state.reminders_checked = True
 
 
 # =========================================================
@@ -2783,6 +2810,225 @@ elif page == "⚙️ Settings":
                 confirm_restore_dialog(_result, _restore_filename)
             else:
                 st.error(f"Invalid backup file: {_result}")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+    # -----------------------------------------------------
+    # REMINDER EMAILS
+    # -----------------------------------------------------
+
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="card-title">📧 Reminder Emails</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<div class="card-subtitle">Automatically email employees about books '
+        'due soon or overdue. Checked once each time the app starts, or on '
+        'demand below.</div>',
+        unsafe_allow_html=True
+    )
+
+    _email_config = email_reminders.load_email_config()
+
+    _reminder_enabled = st.checkbox(
+        "Enable reminder emails",
+        value=_email_config["enabled"],
+        key="reminder_enabled_checkbox"
+    )
+
+    with st.form("reminder_settings_form"):
+
+        st.markdown("**Sender account**")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            _sender_email_input = st.text_input(
+                "Sender email address",
+                value=_email_config["sender_email"]
+            )
+
+        with col2:
+            _app_password_input = st.text_input(
+                "App password",
+                value="",
+                type="password",
+                placeholder=(
+                    "Leave blank to keep current password"
+                    if _email_config["app_password"]
+                    else "Enter app password"
+                )
+            )
+
+        st.caption(
+            "If sending fails with an authentication error, your Microsoft "
+            "365 tenant may have SMTP AUTH (basic authentication) disabled "
+            "- check with IT."
+        )
+
+        col3, col4 = st.columns(2)
+
+        with col3:
+            _smtp_server_input = st.text_input(
+                "SMTP server",
+                value=_email_config["smtp_server"]
+            )
+
+        with col4:
+            _smtp_port_input = st.number_input(
+                "SMTP port",
+                value=int(_email_config["smtp_port"]),
+                min_value=1,
+                max_value=65535,
+                step=1
+            )
+
+        st.markdown("**Reminder timing (days)**")
+
+        col5, col6, col7, col8 = st.columns(4)
+
+        with col5:
+            _due_soon_input = st.number_input(
+                "Due within",
+                value=int(_email_config["due_soon_days"]),
+                min_value=1,
+                max_value=30,
+                step=1,
+                help="Send a reminder when a book's due date is this many days away."
+            )
+
+        with col6:
+            _stage1_input = st.number_input(
+                "1st overdue notice",
+                value=int(_email_config["overdue_stage1_days"]),
+                min_value=1,
+                max_value=90,
+                step=1,
+                help="Days after the due date."
+            )
+
+        with col7:
+            _stage2_input = st.number_input(
+                "2nd overdue notice",
+                value=int(_email_config["overdue_stage2_days"]),
+                min_value=1,
+                max_value=90,
+                step=1,
+                help="Days after the due date."
+            )
+
+        with col8:
+            _stage3_input = st.number_input(
+                "Final overdue notice",
+                value=int(_email_config["overdue_stage3_days"]),
+                min_value=1,
+                max_value=180,
+                step=1,
+                help="Days after the due date. This notice can mention a fine."
+            )
+
+        st.markdown("**Fine (mentioned only in the final overdue notice)**")
+
+        col9, col10 = st.columns(2)
+
+        with col9:
+            _fine_per_day_input = st.number_input(
+                "Fine per day overdue",
+                value=float(_email_config["fine_per_day"]),
+                min_value=0.0,
+                step=1.0,
+                help="0 = no fine mentioned in the email."
+            )
+
+        with col10:
+            _fine_currency_input = st.text_input(
+                "Currency symbol",
+                value=_email_config["fine_currency"]
+            )
+
+        _save_settings = st.form_submit_button(
+            "💾 Save Settings",
+            use_container_width=True
+        )
+
+        if _save_settings:
+
+            if not _sender_email_input.strip():
+                st.error("Sender email address cannot be empty.")
+            elif not (_stage1_input < _stage2_input < _stage3_input):
+                st.error(
+                    "Overdue notice days must increase in order "
+                    "(1st < 2nd < Final)."
+                )
+            else:
+                _new_config = {
+                    "enabled": _reminder_enabled,
+                    "sender_email": _sender_email_input.strip(),
+                    "smtp_server": _smtp_server_input.strip(),
+                    "smtp_port": int(_smtp_port_input),
+                    "due_soon_days": int(_due_soon_input),
+                    "overdue_stage1_days": int(_stage1_input),
+                    "overdue_stage2_days": int(_stage2_input),
+                    "overdue_stage3_days": int(_stage3_input),
+                    "fine_per_day": float(_fine_per_day_input),
+                    "fine_currency": _fine_currency_input.strip(),
+                }
+
+                email_reminders.save_email_config(
+                    _new_config,
+                    new_app_password=_app_password_input.strip() or None
+                )
+
+                st.success("Reminder email settings saved.")
+                st.rerun()
+
+    st.write("")
+
+    _test_col, _send_now_col = st.columns(2)
+
+    with _test_col:
+
+        if st.button(
+            "✉️ Send Test Email",
+            use_container_width=True,
+            key="send_test_email_btn"
+        ):
+            _current_config = email_reminders.load_email_config()
+
+            if not _current_config["sender_email"] or not _current_config["app_password"]:
+                st.error("Set a sender email and app password first, then save.")
+            else:
+                try:
+                    email_reminders.send_test_email(_current_config)
+                    st.success(f"Test email sent to {_current_config['sender_email']}.")
+                except Exception as e:
+                    st.error(f"Could not send test email: {e}")
+
+    with _send_now_col:
+
+        if st.button(
+            "📧 Check & Send Reminders Now",
+            use_container_width=True,
+            key="send_reminders_now_btn"
+        ):
+            _current_config = email_reminders.load_email_config()
+
+            if not _current_config["enabled"]:
+                st.warning("Reminder emails are disabled - enable and save above first.")
+            elif not _current_config["sender_email"] or not _current_config["app_password"]:
+                st.error("Set a sender email and app password first, then save.")
+            else:
+                _result = email_reminders.check_and_send_reminders(_current_config)
+
+                st.success(
+                    f"Checked {_result['checked']} issued book(s), "
+                    f"sent {_result['sent']} reminder email(s)."
+                )
+
+                for _err in _result["errors"]:
+                    st.error(_err)
 
     st.markdown('</div>', unsafe_allow_html=True)
 

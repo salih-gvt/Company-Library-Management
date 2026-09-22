@@ -103,6 +103,26 @@ def create_tables():
         )
     """)
 
+    # Migration: add per-stage reminder-email tracking columns for
+    # databases created before this feature existed. Each stage is
+    # tracked separately (rather than reusing the old single
+    # `reminder_sent` flag) so a book overdue long enough to pass
+    # several thresholds gets exactly one email per stage, not one
+    # ever.
+    cursor.execute("PRAGMA table_info(issued_books)")
+    existing_issued_columns = [row[1] for row in cursor.fetchall()]
+
+    for reminder_column in (
+        "reminder_due_soon_sent",
+        "reminder_stage1_sent",
+        "reminder_stage2_sent",
+        "reminder_stage3_sent",
+    ):
+        if reminder_column not in existing_issued_columns:
+            cursor.execute(
+                f"ALTER TABLE issued_books ADD COLUMN {reminder_column} INTEGER DEFAULT 0"
+            )
+
     # Waiting list table - lets an employee register interest in a
     # book that's currently issued to someone else.
     cursor.execute("""

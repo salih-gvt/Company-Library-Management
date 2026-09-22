@@ -20,6 +20,12 @@ hidden_imports = (
     + collect_submodules("altair")
     + collect_submodules("webview")
     + collect_submodules("clr_loader")
+    # email_reminders.py is bundled as a plain data file (like app.py/
+    # database.py), so PyInstaller's static analysis never sees its
+    # imports - smtplib/email.* have to be hinted explicitly or they're
+    # silently left out of the frozen build.
+    + collect_submodules("email")
+    + ["smtplib", "ssl"]
 )
 
 a = Analysis(
@@ -30,6 +36,7 @@ a = Analysis(
         ("source/app.py", "."),
         ("source/database.py", "."),
         ("source/version.py", "."),
+        ("source/email_reminders.py", "."),
     ],
     hiddenimports=hidden_imports,
     hookspath=[],

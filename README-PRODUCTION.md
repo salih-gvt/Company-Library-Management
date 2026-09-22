@@ -157,6 +157,38 @@ critical path fix described below.
     checks), same Excel re-sync after every change. The "Add Employee" /
     "Add New Book" forms above the list are untouched.
 
+12. **Automatic due-date reminder emails** (requested), new card on the
+    Settings page, new module `source/email_reminders.py`:
+    - Four configurable stages, each tracked independently per issue record
+      (new `reminder_due_soon_sent`/`reminder_stage1_sent`/`_stage2_sent`/
+      `_stage3_sent` columns on `issued_books`, migrated in automatically):
+      due-soon (default 3 days before the due date), and three overdue
+      notices (default 3/10/15 days after). The final notice can mention a
+      fine, calculated as a configurable per-day rate × days overdue -
+      omitted entirely if the rate is 0.
+    - Checked once per app launch (same once-per-session pattern as the
+      Excel import and update check above), plus a manual "Check & Send
+      Reminders Now" button. Both are safe to run repeatedly - already-sent
+      stages are never re-sent, and if the app hasn't been opened in a
+      while, only the single highest applicable stage is sent (not one
+      email per missed stage).
+    - Settings: sender address (defaults to `info@gravity-bp.com`, editable
+      per request), app password, SMTP server/port (defaults to
+      `smtp.office365.com:587` for Microsoft 365), the four day thresholds,
+      and the fine rate/currency symbol - plus a "Send Test Email" button to
+      verify credentials without waiting for a real due date.
+    - The app password is never stored in plaintext: it's encrypted with
+      Windows DPAPI (`CryptProtectData`, via `ctypes` - no new dependency),
+      the same mechanism Windows Credential Manager itself uses, tied to
+      this Windows user account. The password field is always shown blank;
+      leaving it blank on save keeps whatever password was already stored.
+    - Uses only `smtplib`/`email.mime` (Python's standard library) to send -
+      no new pip dependency for this feature itself.
+    - **Known risk, flagged to you separately**: many Microsoft 365
+      tenants now disable SMTP AUTH (basic authentication) by default:
+      use "Send Test Email" first to confirm your tenant allows it before
+      relying on this.
+
 Everything else - page structure, navigation labels, form fields,
 validation rules, and all database/Excel logic - is unchanged from the
 original app.
@@ -283,6 +315,14 @@ see limitation below):
 | Edit dialogs pre-fill with the correct row's real data | ✅ Pass (verified exact values: e.g. employee E006/Aleena, book B001/"1984"/George Orwell/Fiction) |
 | Delete dialogs show the correct name/ID in the warning before confirming | ✅ Pass (verified exact wording for both an employee and a book) |
 | Clicking Save/Delete *inside* the dialog and having it persist | Not verified via automation - `AppTest` isolated this as a limitation of testing `st.dialog` specifically (confirmed by testing the identical set-value-then-click pattern against a plain, non-dialog form, which worked and correctly wrote to the database), not a code issue. The dialogs call the same pre-existing, already-proven `update_*`/`delete_*` functions with argument order verified by direct code review. Worth one manual click-through. |
+| Bug fix: delete confirmation dialogs (and Restore) were calling `st.rerun()` unconditionally, wiping their own error message before it could be seen when a delete was correctly blocked | ✅ Fixed - moved `st.rerun()` inside the success path only, matching the pattern the Edit dialogs already used correctly. Confirmed against real data: the books/employees you *couldn't* delete were exactly the ones with active loans - the block was always correct, only the explanation was invisible |
+| DPAPI encrypt/decrypt round-trip for the app password | ✅ Pass (encrypted blob differs from plaintext; decrypts back to the exact original string) |
+| Email config save/load, including "leave password blank to keep existing" | ✅ Pass (tested: save with a password, reload with a different field changed and no new password, confirm the original password is still there; confirmed the plaintext password never appears anywhere in the saved config file) |
+| Reminder-stage calculation against 5 controlled scenarios (due-soon, each of the 3 overdue stages, and not-yet-due) | ✅ Pass, using a mocked send function so no real emails were sent during testing - all 5 resolved to exactly the right stage, including confirming a book overdue past all three thresholds sends only the final notice, not three emails |
+| Reminder settings form (Settings page) renders and saves correctly through the real UI | ✅ Pass (via `AppTest`, which handles regular forms reliably unlike dialogs) |
+| SMTP failure produces a clear, catchable error instead of hanging or crashing | ✅ Pass (tested against an unreachable host; the exact real-account app password is only in your hands, so live send to a real Microsoft 365 account is untested and should be checked with "Send Test Email" first) |
+| Frozen (PyInstaller) build actually includes `smtplib`/`email.mime` | Initially **failed** - `email_reminders.py` is bundled as a data file like `app.py`, so PyInstaller's static analysis never saw its imports, and the frozen exe crashed on startup with `ModuleNotFoundError: No module named 'email.mime'`. Fixed by adding explicit hidden-imports for the `email` package tree plus `smtplib`/`ssl` to `CompanyLibrary.spec`. Rebuilt and confirmed clean startup afterward. |
+| Full page regression (all 8 pages) after every change in this round | ✅ Pass, no exceptions, each time |
 
 **Known limitation:** all testing above ran on this development machine, not
 a separate clean Windows machine with no dev tools installed. I did not
