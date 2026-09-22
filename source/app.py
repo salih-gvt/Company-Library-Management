@@ -1154,11 +1154,11 @@ def delete_employee_dialog(employee_id, name):
             try:
                 delete_employee(employee_id)
                 st.success("Employee deleted successfully.")
+                st.rerun()
             except ValueError as e:
                 st.error(str(e))
             except Exception as e:
                 st.error(f"Error: {e}")
-            st.rerun()
 
 
 @st.dialog("Edit Book")
@@ -1224,11 +1224,11 @@ def delete_book_dialog(book_id, title):
             try:
                 delete_book(book_id)
                 st.success("Book deleted successfully.")
+                st.rerun()
             except ValueError as e:
                 st.error(str(e))
             except Exception as e:
                 st.error(f"Error: {e}")
-            st.rerun()
 
 
 def get_all_issue_records():
@@ -1493,9 +1493,9 @@ def confirm_restore_dialog(backup_info, filename):
             try:
                 restore_from_backup(backup_info["data"])
                 st.success("Restore complete. Your data has been replaced with the backup.")
+                st.rerun()
             except Exception as e:
                 st.error(f"Restore failed: {e}")
-            st.rerun()
 
 
 # =========================================================
