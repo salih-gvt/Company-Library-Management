@@ -23,6 +23,7 @@ import base64
 import ctypes
 import json
 import smtplib
+import subprocess
 from ctypes import wintypes
 from datetime import date
 from email.mime.multipart import MIMEMultipart
@@ -354,3 +355,58 @@ def check_and_send_reminders(config=None):
 
     connection.close()
     return summary
+
+
+# =========================================================
+# SCHEDULED TASK STATUS (the installer registers a Windows Scheduled
+# Task that runs this same app headlessly once a day - see setup.iss)
+# =========================================================
+
+SCHEDULED_TASK_NAME = "CompanyLibraryManagement_DailyReminderCheck"
+
+
+def get_scheduled_task_time():
+    """Returns the daily run time as a string (e.g. "9:00:00 AM") if
+    the installer's Scheduled Task exists on this machine, or None if
+    it doesn't (not installed via the installer, or task creation
+    failed at install time - Settings should say so rather than
+    implying a schedule exists when it might not)."""
+
+    try:
+        result = subprocess.run(
+            ["schtasks.exe", "/Query", "/TN", SCHEDULED_TASK_NAME, "/V", "/FO", "LIST"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        if result.returncode != 0:
+            return None
+
+        for line in result.stdout.splitlines():
+            if line.strip().startswith("Start Time:"):
+                return line.split(":", 1)[1].strip()
+
+    except Exception:
+        pass
+
+    return None
+
+
+def set_scheduled_task_time(hh_mm):
+    """Changes the daily Scheduled Task's run time to hh_mm ("HH:MM",
+    24-hour). Returns True on success, False if the task doesn't exist
+    or the change failed."""
+
+    try:
+        result = subprocess.run(
+            ["schtasks.exe", "/Change", "/TN", SCHEDULED_TASK_NAME, "/ST", hh_mm],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        return result.returncode == 0
+
+    except Exception:
+        return False

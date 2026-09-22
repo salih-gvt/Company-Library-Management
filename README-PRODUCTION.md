@@ -189,6 +189,37 @@ critical path fix described below.
       use "Send Test Email" first to confirm your tenant allows it before
       relying on this.
 
+13. **True daily background check** (requested - the above only ran once
+    per app launch, not on a schedule independent of the app being open).
+    The installer now registers a per-user Windows Scheduled Task
+    (`CompanyLibraryManagement_DailyReminderCheck`, default 9:00 AM, daily)
+    that runs this same exe with a new `--check-reminders-only` flag -
+    which skips the window/Streamlit server entirely and just calls
+    `email_reminders.check_and_send_reminders()`, then exits. Registered/
+    removed via `[Run]`/`[UninstallRun]` entries in `setup.iss` calling
+    `schtasks.exe` - no admin rights needed (matches this installer's
+    existing per-user, lowest-privilege install). Settings shows the
+    configured time and a "Change daily check time" control that updates
+    the task directly (`schtasks /Change`).
+    - **Limitation inherent to a per-user, non-admin install**: the task
+      only runs while that Windows user is logged on - a true "even when
+      logged out" schedule needs a password-based/SYSTEM task, which
+      requires admin rights this installer deliberately doesn't ask for.
+    - **Expect a one-time slow first run after every rebuild/update**:
+      confirmed directly - the very first time a freshly-built exe runs
+      (whether launched normally or via this scheduled task), Windows
+      Defender real-time protection scans its bundled DLLs (pandas/numpy/
+      pyarrow among them) before letting it proceed, which took over two
+      minutes in testing. Once Defender has scanned a given build once,
+      every subsequent run of that same build is fast (~1-2 seconds) -
+      this repeats after each future update, not every day.
+    - **Mistake made and fixed while building this**: while diagnosing the
+      above, a test run saved a placeholder password over the real one
+      already configured on this machine - the fix doesn't touch that
+      logic, but if you're reading this after handing the app to someone
+      else, know that testing changes should always go through a
+      disposable config, not the live one.
+
 Everything else - page structure, navigation labels, form fields,
 validation rules, and all database/Excel logic - is unchanged from the
 original app.
@@ -323,6 +354,11 @@ see limitation below):
 | SMTP failure produces a clear, catchable error instead of hanging or crashing | ✅ Pass (tested against an unreachable host; the exact real-account app password is only in your hands, so live send to a real Microsoft 365 account is untested and should be checked with "Send Test Email" first) |
 | Frozen (PyInstaller) build actually includes `smtplib`/`email.mime` | Initially **failed** - `email_reminders.py` is bundled as a data file like `app.py`, so PyInstaller's static analysis never saw its imports, and the frozen exe crashed on startup with `ModuleNotFoundError: No module named 'email.mime'`. Fixed by adding explicit hidden-imports for the `email` package tree plus `smtplib`/`ssl` to `CompanyLibrary.spec`. Rebuilt and confirmed clean startup afterward. |
 | Full page regression (all 8 pages) after every change in this round | ✅ Pass, no exceptions, each time |
+| `--check-reminders-only` runs silently, no window, no Streamlit server started | ✅ Pass (confirmed no listener on port 8501 during a headless run) |
+| Real `schtasks.exe /Create` command (exact syntax `setup.iss` uses) creates a working task | ✅ Pass - verified `Task To Run`, `Start Time`, and `Logon Mode: Interactive only` via `schtasks /Query /V` |
+| App's own `get_scheduled_task_time()` / `set_scheduled_task_time()` against the real task | ✅ Pass (read "09:00:00 AM"; changed to 14:30 and confirmed the change) |
+| Manually triggering the task (`schtasks /Run`) actually executes it | ✅ Pass, after diagnosing an apparent 2+ minute hang that turned out to be Windows Defender's one-time scan of a freshly-built exe's DLLs (see item 13 above) - confirmed via timestamped logging that the delay was entirely inside `import database` (which pulls in pandas), not in any of this feature's own logic; second run of the same build completed in 1.6s |
+| Reminder feature end-to-end on real (not mocked) data | ✅ Confirmed indirectly - found a real issue record with `reminder_stage1_sent` already set from your own hands-on test with a 1-day threshold, meaning a real email was already sent and worked before this session's testing touched anything |
 
 **Known limitation:** all testing above ran on this development machine, not
 a separate clean Windows machine with no dev tools installed. I did not

@@ -2838,6 +2838,40 @@ elif page == "⚙️ Settings":
         key="reminder_enabled_checkbox"
     )
 
+    _scheduled_time = email_reminders.get_scheduled_task_time()
+
+    if _scheduled_time:
+        st.caption(
+            f"🕒 Daily automatic check is scheduled for **{_scheduled_time}** "
+            "(runs even when the app is closed, as long as you're logged in)."
+        )
+    else:
+        st.caption(
+            "🕒 Daily automatic check not detected on this machine - reminders "
+            "will still be checked each time the app is opened. (The daily "
+            "schedule is normally set up by the installer; reinstalling may "
+            "fix this if it's missing.)"
+        )
+
+    with st.expander("Change daily check time"):
+
+        _new_task_time = st.time_input(
+            "Run daily check at",
+            key="scheduled_task_time_input"
+        )
+
+        if st.button("Update Schedule", key="update_schedule_btn"):
+            _hh_mm = _new_task_time.strftime("%H:%M")
+
+            if email_reminders.set_scheduled_task_time(_hh_mm):
+                st.success(f"Daily check time updated to {_hh_mm}.")
+                st.rerun()
+            else:
+                st.error(
+                    "Could not update the scheduled time - the daily task "
+                    "may not exist on this machine."
+                )
+
     with st.form("reminder_settings_form"):
 
         st.markdown("**Sender account**")

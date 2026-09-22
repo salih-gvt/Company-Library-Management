@@ -65,7 +65,32 @@ def _run_streamlit(app_path: str):
     stcli.main()
 
 
+def _run_reminder_check_only():
+    """Headless path for the daily Scheduled Task: just check due dates
+    and send whatever reminder emails are due, then exit - no window,
+    no Streamlit server. Lets the reminder feature run once a day
+    whether or not anyone has the app open (see setup.iss, which
+    registers the scheduled task pointing back at this same exe with
+    --check-reminders-only)."""
+
+    bundle_dir = _bundle_dir()
+    sys.path.insert(0, str(bundle_dir))
+
+    try:
+        import database
+        database.create_tables()
+
+        import email_reminders
+        email_reminders.check_and_send_reminders()
+    except Exception:
+        pass  # scheduled/unattended run - nothing to surface this to
+
+
 def main():
+    if "--check-reminders-only" in sys.argv:
+        _run_reminder_check_only()
+        return
+
     bundle_dir = _bundle_dir()
     app_path = str(bundle_dir / "app.py")
 
