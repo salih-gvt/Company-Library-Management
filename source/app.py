@@ -112,10 +112,15 @@ def _theme_css(p):
         box-shadow: 0 4px 10px {p['shadow']}, 0 16px 32px -14px {p['shadow_hover']};
     }}
 
-    .page-title, .card-title, .kpi-value {{ color: {p['text']}; }}
+    .page-title, .card-title, .kpi-value, .empty-state-title {{ color: {p['text']}; }}
 
-    .page-subtitle, .card-subtitle, .kpi-label, .kpi-small {{
+    .page-subtitle, .card-subtitle, .kpi-label, .kpi-small,
+    .empty-state, .empty-state-subtitle {{
         color: {p['subtext']};
+    }}
+
+    [class*="st-key-rowtable_"] div[data-testid="stHorizontalBlock"]:nth-of-type(even) {{
+        background: {p['border']};
     }}
 
     hr {{ border-top-color: {p['border']}; }}
@@ -411,16 +416,63 @@ section[data-testid="stSidebar"] .stButton > button[kind="primary"]:focus {
 }
 
 
-/* ---------- STATUS ---------- */
+/* ---------- STATUS BADGES ---------- */
+
+.status-available,
+.status-issued {
+    display: inline-block;
+    font-weight: 600;
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 999px;
+}
 
 .status-available {
     color: #047857;
-    font-weight: 600;
+    background: rgba(5, 150, 105, 0.12);
 }
 
 .status-issued {
     color: #dc2626;
+    background: rgba(220, 38, 38, 0.10);
+}
+
+
+/* ---------- EMPTY STATE ---------- */
+
+.empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: #6b7280;
+}
+
+.empty-state-icon {
+    font-size: 34px;
+    margin-bottom: 10px;
+}
+
+.empty-state-title {
+    font-size: 15px;
     font-weight: 600;
+    color: #111827;
+}
+
+.empty-state-subtitle {
+    font-size: 13px;
+    margin-top: 4px;
+}
+
+
+/* ---------- ROW TABLES (Members/Books directory, paginated lists) --- */
+
+[class*="st-key-rowtable_"] div[data-testid="stHorizontalBlock"]:nth-of-type(even) {
+    background: rgba(17, 24, 39, 0.03);
+    border-radius: 8px;
+}
+
+[class*="st-key-rowtable_"] div[data-testid="stHorizontalBlock"] {
+    padding: 6px 4px;
+    align-items: center;
 }
 
 
@@ -1540,6 +1592,109 @@ def page_header(title, subtitle):
     )
 
 
+def render_kpi_strip(kpis):
+    """kpis: list of (label, value, small_caption, css_class_or_None)
+    tuples - same visual style as the Dashboard's KPI cards, for reuse
+    on other pages."""
+
+    cols = st.columns(len(kpis))
+
+    for col, (label, value, small, css_class) in zip(cols, kpis):
+
+        extra_class = f" {css_class}" if css_class else ""
+
+        with col:
+            st.markdown(
+                f"""
+                <div class="kpi{extra_class}">
+                    <div class="kpi-label">{label}</div>
+                    <div class="kpi-value">{value}</div>
+                    <div class="kpi-small">{small}</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+
+def render_empty_state(icon, title, subtitle=""):
+    """A friendlier alternative to a bare st.info() for pages/sections
+    with nothing to show yet."""
+
+    st.markdown(
+        f"""
+        <div class="empty-state">
+            <div class="empty-state-icon">{icon}</div>
+            <div class="empty-state-title">{title}</div>
+            <div class="empty-state-subtitle">{subtitle}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def render_row_table(headers, rows, key, empty_icon="📭", empty_title="Nothing to show", empty_subtitle="", page_size=10):
+    """A styled, paginated alternative to st.dataframe for simple
+    read-only tables, matching the app's own card/typography instead
+    of Streamlit's default canvas-rendered grid (which also can't
+    follow the light/dark theme). `rows` is a list of tuples, each the
+    same length as `headers`; string values may contain the
+    `status-available`/`status-issued` span classes for colored badges."""
+
+    if not rows:
+        render_empty_state(empty_icon, empty_title, empty_subtitle)
+        return
+
+    page_key = f"{key}_page"
+
+    if page_key not in st.session_state:
+        st.session_state[page_key] = 0
+
+    total_pages = max(1, (len(rows) + page_size - 1) // page_size)
+    st.session_state[page_key] = min(st.session_state[page_key], total_pages - 1)
+    current_page = st.session_state[page_key]
+
+    start = current_page * page_size
+    page_rows = rows[start:start + page_size]
+
+    with st.container(key=f"rowtable_{key}"):
+
+        header_cols = st.columns(len(headers))
+
+        for col, header in zip(header_cols, headers):
+            col.markdown(f"**{header}**")
+
+        for row in page_rows:
+
+            row_cols = st.columns(len(headers))
+
+            for col, value in zip(row_cols, row):
+                col.markdown(str(value), unsafe_allow_html=True)
+
+    if total_pages > 1:
+
+        st.caption(
+            f"Showing {start + 1}-{min(start + page_size, len(rows))} of {len(rows)}"
+        )
+
+        prev_col, page_col, next_col = st.columns([1, 3, 1])
+
+        with prev_col:
+            if st.button("◀ Prev", key=f"{key}_prev", disabled=current_page == 0, use_container_width=True):
+                st.session_state[page_key] -= 1
+                st.rerun()
+
+        with page_col:
+            st.markdown(
+                f"<div style='text-align:center; padding-top:8px;'>Page {current_page + 1} of {total_pages}</div>",
+                unsafe_allow_html=True
+            )
+
+        with next_col:
+            if st.button("Next ▶", key=f"{key}_next", disabled=current_page >= total_pages - 1, use_container_width=True):
+                st.session_state[page_key] += 1
+                st.rerun()
+
+
 # =========================================================
 # SIDEBAR
 # =========================================================
@@ -1840,58 +1995,37 @@ if page == "🏠 Dashboard":
 
             upcoming_list.append(book)
 
-    def render_issued_table(book_list):
+    _issued_table_headers = ["Employee ID", "Employee Name", "Email", "Book ID", "Book Title", "Due Date"]
 
-        if not book_list:
-            return False
-
-        data = []
-
-        for book in book_list:
-
-            data.append([
-                book[1],
-                book[2],
-                book[3],
-                book[4],
-                book[5],
-                book[7]
-            ])
-
-        df = pd.DataFrame(
-            data,
-            columns=[
-                "Employee ID",
-                "Employee Name",
-                "Email",
-                "Book ID",
-                "Book Title",
-                "Due Date"
-            ]
-        )
-
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True
-        )
-
-        return True
+    def _issued_table_rows(book_list):
+        return [(book[1], book[2], book[3], book[4], book[5], book[7]) for book in book_list]
 
     st.markdown("### 🔔 Due Today")
-
-    if not render_issued_table(due_today_list):
-        st.success("No books are due today.")
+    render_row_table(
+        _issued_table_headers,
+        _issued_table_rows(due_today_list),
+        key="dash_due_today",
+        empty_icon="✅",
+        empty_title="No books are due today"
+    )
 
     st.markdown("### ⚠️ Overdue")
-
-    if not render_issued_table(overdue_list):
-        st.success("No overdue books.")
+    render_row_table(
+        _issued_table_headers,
+        _issued_table_rows(overdue_list),
+        key="dash_overdue",
+        empty_icon="✅",
+        empty_title="No overdue books"
+    )
 
     st.markdown("### 📆 Upcoming")
-
-    if not render_issued_table(upcoming_list):
-        st.info("No upcoming books.")
+    render_row_table(
+        _issued_table_headers,
+        _issued_table_rows(upcoming_list),
+        key="dash_upcoming",
+        empty_icon="📆",
+        empty_title="No upcoming books"
+    )
 
 
 # =========================================================
@@ -2005,6 +2139,27 @@ elif page == "👥 Members":
 
     if members:
 
+        departments = {m[3] for m in members if m[3]}
+
+        render_kpi_strip([
+            ("Total Employees", len(members), "Registered members", None),
+            ("Departments", len(departments), "Represented in the directory", "kpi-issued"),
+        ])
+
+        st.write("")
+
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="card-title">📋 Employee Directory</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<div class="card-subtitle">Search, edit or remove existing employees</div>',
+        unsafe_allow_html=True
+    )
+
+    if members:
+
         search = st.text_input(
             "🔎 Search employee",
             placeholder="Search by ID, name or department..."
@@ -2026,48 +2181,88 @@ elif page == "👥 Members":
 
         if filtered_members:
 
-            header_cols = st.columns([2, 2, 3, 2, 1, 1])
+            page_size = 10
+            page_key = "members_page"
 
-            for header_col, header_label in zip(
-                header_cols,
-                ["Employee ID", "Name", "Email", "Department", "", ""]
-            ):
-                header_col.markdown(f"**{header_label}**")
+            if page_key not in st.session_state:
+                st.session_state[page_key] = 0
 
-            for employee_id, name, email, department in filtered_members:
+            total_pages = max(1, (len(filtered_members) + page_size - 1) // page_size)
+            st.session_state[page_key] = min(st.session_state[page_key], total_pages - 1)
+            current_page = st.session_state[page_key]
 
-                row_cols = st.columns([2, 2, 3, 2, 1, 1])
+            start = current_page * page_size
+            page_members = filtered_members[start:start + page_size]
 
-                row_cols[0].write(employee_id)
-                row_cols[1].write(name)
-                row_cols[2].write(email)
-                row_cols[3].write(department)
+            with st.container(key="rowtable_members"):
 
-                if row_cols[4].button(
-                    "✏️",
-                    key=f"edit_employee_{employee_id}",
-                    help="Edit this employee",
-                    use_container_width=True
+                header_cols = st.columns([2, 2, 3, 2, 1, 1])
+
+                for header_col, header_label in zip(
+                    header_cols,
+                    ["Employee ID", "Name", "Email", "Department", "", ""]
                 ):
-                    edit_employee_dialog(employee_id, name, email, department)
+                    header_col.markdown(f"**{header_label}**")
 
-                if row_cols[5].button(
-                    "🗑️",
-                    key=f"delete_employee_{employee_id}",
-                    help="Delete this employee",
-                    use_container_width=True
-                ):
-                    delete_employee_dialog(employee_id, name)
+                for employee_id, name, email, department in page_members:
+
+                    row_cols = st.columns([2, 2, 3, 2, 1, 1])
+
+                    row_cols[0].write(employee_id)
+                    row_cols[1].write(name)
+                    row_cols[2].write(email)
+                    row_cols[3].write(department)
+
+                    if row_cols[4].button(
+                        "✏️",
+                        key=f"edit_employee_{employee_id}",
+                        help="Edit this employee",
+                        use_container_width=True
+                    ):
+                        edit_employee_dialog(employee_id, name, email, department)
+
+                    if row_cols[5].button(
+                        "🗑️",
+                        key=f"delete_employee_{employee_id}",
+                        help="Delete this employee",
+                        use_container_width=True
+                    ):
+                        delete_employee_dialog(employee_id, name)
+
+            if total_pages > 1:
+
+                st.caption(
+                    f"Showing {start + 1}-{min(start + page_size, len(filtered_members))} "
+                    f"of {len(filtered_members)}"
+                )
+
+                prev_col, page_col, next_col = st.columns([1, 3, 1])
+
+                with prev_col:
+                    if st.button("◀ Prev", key="members_prev", disabled=current_page == 0, use_container_width=True):
+                        st.session_state[page_key] -= 1
+                        st.rerun()
+
+                with page_col:
+                    st.markdown(
+                        f"<div style='text-align:center; padding-top:8px;'>Page {current_page + 1} of {total_pages}</div>",
+                        unsafe_allow_html=True
+                    )
+
+                with next_col:
+                    if st.button("Next ▶", key="members_next", disabled=current_page >= total_pages - 1, use_container_width=True):
+                        st.session_state[page_key] += 1
+                        st.rerun()
 
         else:
 
-            st.info("No employees match your search.")
+            render_empty_state("🔍", "No employees match your search", "Try a different name, ID or department.")
 
     else:
 
-        st.info(
-            "No employees found."
-        )
+        render_empty_state("👥", "No employees yet", "Add your first employee using the form above.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =========================================================
@@ -2218,6 +2413,28 @@ elif page == "📚 Books":
 
     if books:
 
+        available_count = sum(1 for b in books if b[4] == 1)
+
+        render_kpi_strip([
+            ("Total Books", len(books), "In the catalogue", None),
+            ("Available", available_count, "Ready to issue", "kpi-available"),
+            ("Issued", len(books) - available_count, "Currently out", "kpi-issued"),
+        ])
+
+        st.write("")
+
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="card-title">📋 Book Catalogue</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<div class="card-subtitle">Search, edit or remove existing books</div>',
+        unsafe_allow_html=True
+    )
+
+    if books:
+
         search = st.text_input(
             "🔎 Search books",
             placeholder="Search by book ID, title, author or category..."
@@ -2240,59 +2457,99 @@ elif page == "📚 Books":
 
         if filtered_books:
 
+            page_size = 10
+            page_key = "books_page"
+
+            if page_key not in st.session_state:
+                st.session_state[page_key] = 0
+
+            total_pages = max(1, (len(filtered_books) + page_size - 1) // page_size)
+            st.session_state[page_key] = min(st.session_state[page_key], total_pages - 1)
+            current_page = st.session_state[page_key]
+
+            start = current_page * page_size
+            page_books = filtered_books[start:start + page_size]
+
             column_widths = [1.3, 2, 1.6, 1.3, 1, 1, 0.7, 0.7]
 
-            header_cols = st.columns(column_widths)
+            with st.container(key="rowtable_books"):
 
-            for header_col, header_label in zip(
-                header_cols,
-                ["Book ID", "Title", "Author", "Category", "Status", "Condition", "", ""]
-            ):
-                header_col.markdown(f"**{header_label}**")
+                header_cols = st.columns(column_widths)
 
-            for book_id, title, author, category, available, condition in filtered_books:
-
-                status = "Available" if available == 1 else "Issued"
-
-                row_cols = st.columns(column_widths)
-
-                row_cols[0].write(book_id)
-                row_cols[1].write(title)
-                row_cols[2].write(author)
-                row_cols[3].write(category)
-
-                if status == "Available":
-                    row_cols[4].markdown(f'<span class="status-available">{status}</span>', unsafe_allow_html=True)
-                else:
-                    row_cols[4].markdown(f'<span class="status-issued">{status}</span>', unsafe_allow_html=True)
-
-                row_cols[5].write(condition)
-
-                if row_cols[6].button(
-                    "✏️",
-                    key=f"edit_book_{book_id}",
-                    help="Edit this book",
-                    use_container_width=True
+                for header_col, header_label in zip(
+                    header_cols,
+                    ["Book ID", "Title", "Author", "Category", "Status", "Condition", "", ""]
                 ):
-                    edit_book_dialog(book_id, title, author, category)
+                    header_col.markdown(f"**{header_label}**")
 
-                if row_cols[7].button(
-                    "🗑️",
-                    key=f"delete_book_{book_id}",
-                    help="Delete this book",
-                    use_container_width=True
-                ):
-                    delete_book_dialog(book_id, title)
+                for book_id, title, author, category, available, condition in page_books:
+
+                    status = "Available" if available == 1 else "Issued"
+
+                    row_cols = st.columns(column_widths)
+
+                    row_cols[0].write(book_id)
+                    row_cols[1].write(title)
+                    row_cols[2].write(author)
+                    row_cols[3].write(category)
+
+                    if status == "Available":
+                        row_cols[4].markdown(f'<span class="status-available">{status}</span>', unsafe_allow_html=True)
+                    else:
+                        row_cols[4].markdown(f'<span class="status-issued">{status}</span>', unsafe_allow_html=True)
+
+                    row_cols[5].write(condition)
+
+                    if row_cols[6].button(
+                        "✏️",
+                        key=f"edit_book_{book_id}",
+                        help="Edit this book",
+                        use_container_width=True
+                    ):
+                        edit_book_dialog(book_id, title, author, category)
+
+                    if row_cols[7].button(
+                        "🗑️",
+                        key=f"delete_book_{book_id}",
+                        help="Delete this book",
+                        use_container_width=True
+                    ):
+                        delete_book_dialog(book_id, title)
+
+            if total_pages > 1:
+
+                st.caption(
+                    f"Showing {start + 1}-{min(start + page_size, len(filtered_books))} "
+                    f"of {len(filtered_books)}"
+                )
+
+                prev_col, page_col, next_col = st.columns([1, 3, 1])
+
+                with prev_col:
+                    if st.button("◀ Prev", key="books_prev", disabled=current_page == 0, use_container_width=True):
+                        st.session_state[page_key] -= 1
+                        st.rerun()
+
+                with page_col:
+                    st.markdown(
+                        f"<div style='text-align:center; padding-top:8px;'>Page {current_page + 1} of {total_pages}</div>",
+                        unsafe_allow_html=True
+                    )
+
+                with next_col:
+                    if st.button("Next ▶", key="books_next", disabled=current_page >= total_pages - 1, use_container_width=True):
+                        st.session_state[page_key] += 1
+                        st.rerun()
 
         else:
 
-            st.info("No books match your search.")
+            render_empty_state("🔍", "No books match your search", "Try a different title, author or category.")
 
     else:
 
-        st.info(
-            "No books found."
-        )
+        render_empty_state("📚", "No books yet", "Add your first book using the form above.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =========================================================
@@ -2397,22 +2654,16 @@ elif page == "📅 Book Reservation":
 
     reservations = get_reservation_list()
 
+    render_row_table(
+        ["Book ID", "Book Title", "Employee ID", "Employee Name", "Requested On", "Notified"],
+        [(entry[1], entry[2], entry[3], entry[4], entry[6], "Yes" if entry[7] else "No") for entry in reservations],
+        key="reservations_list",
+        empty_icon="📅",
+        empty_title="No active reservations",
+        empty_subtitle="Reservations appear here once someone joins a waiting list above."
+    )
+
     if reservations:
-        reservation_df = pd.DataFrame(
-            [
-                [entry[1], entry[2], entry[3], entry[4], entry[6], entry[7]]
-                for entry in reservations
-            ],
-            columns=[
-                "Book ID",
-                "Book Title",
-                "Employee ID",
-                "Employee Name",
-                "Requested On",
-                "Notified"
-            ]
-        )
-        st.dataframe(reservation_df, use_container_width=True, hide_index=True)
 
         remove_options = {
             f"{entry[4]} — {entry[2]}": entry[0]
@@ -2434,8 +2685,6 @@ elif page == "📅 Book Reservation":
                 remove_from_waiting_list(remove_options[selected_remove])
                 st.success("Reservation removed.")
                 st.rerun()
-    else:
-        st.info("No active reservations.")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -2464,7 +2713,7 @@ elif page == "🔎 Track":
     )
 
     if not records:
-        st.info("No issue or return records found.")
+        render_empty_state("🔍", "No issue or return records found", "Records appear here once a book is issued.")
     else:
         track_mode = st.selectbox(
             "Track By",
@@ -2496,28 +2745,29 @@ elif page == "🔎 Track":
                 or search_text in str(row[1]).lower()
             ] if search_text else records
 
-        track_df = pd.DataFrame(
-            [
-                [
-                    row[1], row[2], row[4], row[5],
-                    row[6], row[7], row[8] or "—", row[9]
-                ]
-                for row in filtered_records
-            ],
-            columns=[
-                "Employee ID",
-                "Employee Name",
-                "Book ID",
-                "Book Name",
-                "Issue Date",
-                "Due Date",
-                "Return Date",
-                "Status"
-            ]
-        )
+        def _track_status_badge(status):
+            css_class = "status-available" if status == "Returned" else "status-issued"
+            return f'<span class="{css_class}">{status}</span>'
 
-        st.caption(f"Showing {len(track_df)} record(s).")
-        st.dataframe(track_df, use_container_width=True, hide_index=True)
+        track_rows = [
+            (
+                row[1], row[2], row[4], row[5],
+                row[6], row[7], row[8] or "—", _track_status_badge(row[9])
+            )
+            for row in filtered_records
+        ]
+
+        st.caption(f"Showing {len(track_rows)} record(s).")
+
+        render_row_table(
+            ["Employee ID", "Employee Name", "Book ID", "Book Name", "Issue Date", "Due Date", "Return Date", "Status"],
+            track_rows,
+            key="track_records",
+            empty_icon="🔍",
+            empty_title="No matching records",
+            empty_subtitle="Try a different search term.",
+            page_size=15
+        )
 
     st.markdown('</div>', unsafe_allow_html=True)
 

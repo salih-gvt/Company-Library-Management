@@ -230,6 +230,38 @@ critical path fix described below.
     "edit" path. New "🗑️ Remove Saved Password" button on the Settings
     page, disabled when there's no password to remove.
 
+15. **UI/design pass** (requested a review, then asked to implement the
+    findings). New reusable helpers - `render_kpi_strip`, `render_empty_state`,
+    `render_row_table` - applied across the app, no business logic touched:
+    - Members and Books directory lists are now wrapped in a `.card` like
+      every other section (previously floated directly on the page
+      background), each with its own KPI strip above it (Total Employees/
+      Departments; Total/Available/Issued Books) matching the Dashboard's
+      visual language.
+    - Both directories are now paginated (10 rows/page) rather than
+      rendering every row unconditionally - was fine at today's scale,
+      wouldn't have stayed that way.
+    - Dashboard's Due Today/Overdue/Upcoming, Book Reservation's waiting
+      list, and Track's search results moved off `st.dataframe` (Streamlit's
+      canvas-rendered default grid, which can't follow this app's light/
+      dark theme) onto the same styled row-list pattern Members/Books
+      already used, with the same pagination (15 rows/page on Track, which
+      can grow largest).
+    - "Available"/"Issued" status is now a colored pill badge
+      (`.status-available`/`.status-issued` restyled with a tinted
+      background) instead of plain colored text - reused on Track's
+      Issued/Returned status too.
+    - Bare `st.info("No X found.")` one-liners replaced with a proper empty
+      state (icon + title + short guidance) on Members, Books, Track, and
+      every new row-table's own empty case - contextual inline guidance
+      messages (e.g. "Add an employee first before making a reservation")
+      were deliberately left as-is, too small a space for the full empty
+      state.
+    - Row tables get subtle zebra striping via `nth-of-type(even)`, scoped
+      to a `st.container(key=...)` wrapper per list (`[class*="st-key-
+      rowtable_"]`) so it can't leak onto unrelated column layouts
+      elsewhere on the page.
+
 Everything else - page structure, navigation labels, form fields,
 validation rules, and all database/Excel logic - is unchanged from the
 original app.
@@ -371,6 +403,10 @@ see limitation below):
 | Reminder feature end-to-end on real (not mocked) data | ✅ Confirmed indirectly - found a real issue record with `reminder_stage1_sent` already set from your own hands-on test with a 1-day threshold, meaning a real email was already sent and worked before this session's testing touched anything |
 | `clear_app_password()` removes only the password, leaves every other setting untouched | ✅ Pass - tested against a byte-for-byte backup of the real config (restored immediately after, verified identical to the backup and that the real password still decrypts correctly) |
 | "Remove Saved Password" button correctly disabled when there's no password to remove | ✅ Pass (verified via `AppTest`, `disabled=False` while a real password is set) |
+| Full page regression after the UI overhaul (all 8 pages) | ✅ Pass, no exceptions |
+| KPI strips on Members/Books show correct live counts | ✅ Pass - Members: 4 employees/3 departments; Books: 3 total/2 available/1 issued, all matching real data exactly |
+| Dashboard's Overdue row-table renders real content (not just empty state) | ✅ Pass - confirmed the real overdue book ("1984"/"Salih") renders correctly in the new row-table component |
+| Pagination math (`total_pages` calculation) | ✅ Pass, verified by hand for boundary cases (exactly `page_size` rows → 1 page, `page_size + 1` → 2 pages, etc.) - not exercisable end-to-end against real data since current row counts are all under one page |
 
 **Known limitation:** all testing above ran on this development machine, not
 a separate clean Windows machine with no dev tools installed. I did not
