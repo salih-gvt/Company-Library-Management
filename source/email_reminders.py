@@ -148,6 +148,22 @@ def save_email_config(config, new_app_password=None):
     EMAIL_CONFIG_FILE.write_text(json.dumps(to_save, indent=2))
 
 
+def clear_app_password():
+    """Removes the saved app password entirely, leaving every other
+    setting untouched - the explicit "remove" counterpart to entering
+    a new one in save_email_config. Reminders simply won't send again
+    (check_and_send_reminders already no-ops without a password) until
+    a new one is saved."""
+
+    try:
+        existing = json.loads(EMAIL_CONFIG_FILE.read_text())
+    except Exception:
+        existing = {}
+
+    existing.pop("app_password_encrypted", None)
+    EMAIL_CONFIG_FILE.write_text(json.dumps(existing, indent=2))
+
+
 # =========================================================
 # SENDING
 # =========================================================

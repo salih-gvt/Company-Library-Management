@@ -6,7 +6,7 @@
 ; Output: installer\Company Library Management-Setup.exe
 
 #define MyAppName "Company Library Management"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.3.1"
 #define MyAppPublisher "Gravity BP"
 #define MyAppExeName "Company Library.exe"
 

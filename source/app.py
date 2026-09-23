@@ -3020,7 +3020,7 @@ elif page == "⚙️ Settings":
 
     st.write("")
 
-    _test_col, _send_now_col = st.columns(2)
+    _test_col, _send_now_col, _remove_pw_col = st.columns(3)
 
     with _test_col:
 
@@ -3039,6 +3039,18 @@ elif page == "⚙️ Settings":
                     st.success(f"Test email sent to {_current_config['sender_email']}.")
                 except Exception as e:
                     st.error(f"Could not send test email: {e}")
+
+    with _remove_pw_col:
+
+        if st.button(
+            "🗑️ Remove Saved Password",
+            use_container_width=True,
+            key="remove_password_btn",
+            disabled=not _email_config["app_password"]
+        ):
+            email_reminders.clear_app_password()
+            st.success("Saved password removed. Reminder emails won't send until a new one is entered.")
+            st.rerun()
 
     with _send_now_col:
 

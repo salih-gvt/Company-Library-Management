@@ -220,6 +220,16 @@ critical path fix described below.
       else, know that testing changes should always go through a
       disposable config, not the live one.
 
+14. **Explicit "remove saved password" control** (requested - previously
+    the only way to change the stored password was overwriting it with a
+    new one; there was no way to clear it entirely). New
+    `email_reminders.clear_app_password()` removes just the encrypted
+    password from the config file, leaving every other setting (sender,
+    thresholds, fine rate, enabled state) untouched - the explicit
+    "remove" counterpart to typing a new password into the form's
+    "edit" path. New "🗑️ Remove Saved Password" button on the Settings
+    page, disabled when there's no password to remove.
+
 Everything else - page structure, navigation labels, form fields,
 validation rules, and all database/Excel logic - is unchanged from the
 original app.
@@ -359,6 +369,8 @@ see limitation below):
 | App's own `get_scheduled_task_time()` / `set_scheduled_task_time()` against the real task | ✅ Pass (read "09:00:00 AM"; changed to 14:30 and confirmed the change) |
 | Manually triggering the task (`schtasks /Run`) actually executes it | ✅ Pass, after diagnosing an apparent 2+ minute hang that turned out to be Windows Defender's one-time scan of a freshly-built exe's DLLs (see item 13 above) - confirmed via timestamped logging that the delay was entirely inside `import database` (which pulls in pandas), not in any of this feature's own logic; second run of the same build completed in 1.6s |
 | Reminder feature end-to-end on real (not mocked) data | ✅ Confirmed indirectly - found a real issue record with `reminder_stage1_sent` already set from your own hands-on test with a 1-day threshold, meaning a real email was already sent and worked before this session's testing touched anything |
+| `clear_app_password()` removes only the password, leaves every other setting untouched | ✅ Pass - tested against a byte-for-byte backup of the real config (restored immediately after, verified identical to the backup and that the real password still decrypts correctly) |
+| "Remove Saved Password" button correctly disabled when there's no password to remove | ✅ Pass (verified via `AppTest`, `disabled=False` while a real password is set) |
 
 **Known limitation:** all testing above ran on this development machine, not
 a separate clean Windows machine with no dev tools installed. I did not
